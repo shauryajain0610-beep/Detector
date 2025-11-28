@@ -1,123 +1,130 @@
 import streamlit as st
+import pandas as pd
+import joblib
+import os
+import urllib.parse
 
+# -----------------------------
+# PAGE CONFIG
+# -----------------------------
 st.set_page_config(page_title="Fake News Detector", page_icon="📰")
 
 st.title("📰 Fake News Detection App")
-st.write("Choose input type and analyze whether the content seems Real or Fake.")
+st.write("Detect whether a news headline or article is Real or Fake, and get reasoning, advice, and related sources.")
 
 # -----------------------------
-# SIMPLE RULE-BASED CLASSIFIER
+# PATHS
 # -----------------------------
-def classify_news(text):
-    text = text.lower()
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(BASE_DIR, "models", "models.pkcls")
+TEST_PATH = os.path.join(BASE_DIR, "data", "test_headlines_20")
 
-    fake_keywords = [
-        "shocking", "secret", "breaking!!!", "miracle",
-        "unbelievable", "banned", "hidden truth", "exposed",
-        "100% guarantee", "cure", "conspiracy"
-    ]
+# -----------------------------
+# LOAD PRE-TRAINED MODEL
+# -----------------------------
+@st.cache_data
+def load_model(path):
+    try:
+        model = joblib.load(path)
+        return model
+    except Exception as e:
+        st.error(f"Error loading model: {e}")
+        return None
 
-    score = sum(word in text for word in fake_keywords)
+model = load_model(MODEL_PATH)
 
-    if score >= 2:
-        return "Fake"
-    elif score == 1:
-        return "Possibly Fake"
+# -----------------------------
+# LOAD TEST DATA (optional)
+# -----------------------------
+@st.cache_data
+def load_test_data(path):
+    try:
+        df = pd.read_csv(path)
+        return df
+    except Exception as e:
+        st.warning(f"Could not load test data: {e}")
+        return None
+
+test_df = load_test_data(TEST_PATH)
+
+# -----------------------------
+# PREDICTION FUNCTION
+# -----------------------------
+def classify_text(text):
+    if not model:
+        return "Model not loaded"
+    
+    try:
+        prediction = model.predict([text])  # sklearn-like interface
+        return prediction[0]
+    except Exception as e:
+        return f"Error during prediction: {e}"
+
+# -----------------------------
+# REASONING FUNCTION
+# -----------------------------
+def generate_reasoning(text, prediction):
+    fake_keywords = ["click", "shocking", "secret", "you won't believe", "breaking"]
+    real_keywords = ["reports", "official", "announced", "confirmed", "statement"]
+
+    text_lower = text.lower()
+    if prediction == "Fake":
+        reasons = [kw for kw in fake_keywords if kw in text_lower]
+        return "The headline/article contains sensational or misleading terms: " + ", ".join(reasons) if reasons else "The text seems suspicious or exaggerated."
     else:
-        return "Real"
-
+        reasons = [kw for kw in real_keywords if kw in text_lower]
+        return "The headline/article contains credible, official, or verified terms: " + ", ".join(reasons) if reasons else "The text appears factual and credible."
 
 # -----------------------------
-# STREAMLIT INPUT AREA
+# ADVICE FUNCTION
 # -----------------------------
-st.header("📝 Select Input Type")
-choice = st.radio("Select what you want to enter:", ["Headline Only", "Full Article"])
-
-headline = ""
-article = ""
-
-if choice == "Headline Only":
-    headline = st.text_input("Enter News Headline")
-else:
-    headline = st.text_input("Headline (optional)")
-    article = st.text_area("Enter Full Article Text", height=180)
-
-if st.button("Analyze"):
-    combined_text = (headline + " " + article).strip()
-
-    if not combined_text:
-        st.warning("⚠ Please enter some text first.")
+def generate_advice(prediction):
+    if prediction == "Fake":
+        return "Be cautious before sharing. Verify with trusted sources and avoid spreading misinformation."
     else:
-        prediction = classify_news(combined_text)
+        return "You can trust this news, but always cross-check with official outlets if needed."
 
-        # -----------------------------
-        # DYNAMIC REASONING & ADVICE
-        # -----------------------------
-        if prediction == "Fake":
-            reasoning = "The text contains several sensational or misleading keywords, which indicate a high likelihood of misinformation."
-            advice = """
-            ❌ **Advice if Fake:**  
-            - Immediately verify using trusted fact-checking sites  
-            - Do NOT share this information unless verified  
-            - Look for official government or credible news sources  
-            """
+# -----------------------------
+# EXTERNAL SOURCES FUNCTION
+# -----------------------------
+def generate_sources(text):
+    # Simple example: search the headline on Google News
+    query = urllib.parse.quote(text)
+    url = f"https://news.google.com/search?q={query}"
+    return url
 
-            sources = """
-            - [Alt News](https://www.altnews.in/)  
-            - [BOOM Fact Check](https://www.boomlive.in/)  
-            - [Factly](https://factly.in/)  
-            """
+# -----------------------------
+# USER INPUT
+# -----------------------------
+option = st.radio("Choose input type:", ("Headline", "Full Article"))
 
-        elif prediction == "Possibly Fake":
-            reasoning = "At least one suspicious keyword is detected. It may or may not be accurate, but requires verification."
-            advice = """
-            ⚠ **Advice if Possibly Fake:**  
-            - Cross-check with multiple reliable news outlets  
-            - Check publication time and author credibility  
-            - Search if reputed media outlets covered the same story  
-            """
+input_text = st.text_area(f"Enter your {option.lower()} here:")
 
-            sources = """
-            - [Google Fact Check Explorer](https://toolbox.google.com/factcheck/explorer)  
-            - [Snopes](https://www.snopes.com/)  
-            """
+if st.button("Check News"):
+    if input_text.strip() == "":
+        st.warning("Please enter some text to classify!")
+    else:
+        result = classify_text(input_text)
+        st.success(f"Prediction: **{result}**")
 
-        else:
-            reasoning = "There are no common signals of misinformation or exaggerated keywords detected."
-            advice = """
-            ✔ **Advice if Real:**  
-            - Still check original source for any updates  
-            - Share responsibly from official/reputed outlets  
-            - Verify facts from authentic government or national agencies  
-            """
+        reasoning = generate_reasoning(input_text, result)
+        advice = generate_advice(result)
+        source_url = generate_sources(input_text)
 
-            sources = """
-            - [Reuters Official News](https://www.reuters.com/)  
-            - [BBC News](https://www.bbc.com/)  
-            - [The Hindu](https://www.thehindu.com/)  
-            """
-
-        # -----------------------------
-        # DISPLAY RESULTS
-        # -----------------------------
-        st.subheader("🔍 Prediction")
-
-        if prediction == "Fake":
-            st.error("❌ FAKE NEWS")
-        elif prediction == "Possibly Fake":
-            st.warning("⚠️ POSSIBLY FAKE")
-        else:
-            st.success("✔ REAL NEWS")
-
-        st.subheader("🧠 Reasoning")
+        st.subheader("Reasoning")
         st.write(reasoning)
 
-        st.subheader("💡 Smart Advice")
+        st.subheader("Advice")
         st.write(advice)
 
-        st.subheader("🔗 Trusted Verification Sources")
-        st.markdown(sources)
+        st.subheader("Related Sources")
+        st.markdown(f"[Click here to check related news]({source_url})", unsafe_allow_html=True)
 
-        st.info("This rule-based model is for demonstration. Connect ML model for real accuracy.")
-
-
+# -----------------------------
+# OPTIONAL: Show sample test headlines
+# -----------------------------
+if st.checkbox("Show sample test headlines"):
+    if test_df is not None:
+        st.dataframe(test_df.head(20))
+    else:
+        st.info("Test dataset not available.")
