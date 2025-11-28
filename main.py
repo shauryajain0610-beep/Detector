@@ -1,143 +1,122 @@
 import streamlit as st
-import urllib.parse
 
-from Orange.data import Table, Domain, StringVariable
-from Orange.preprocess.text import preprocess_strings
-from Orange.classification import NaiveBayesLearner
+st.set_page_config(page_title="Fake News Detector", page_icon="📰")
 
-# ------------------------------------------------------------
-# ORANGE TEXT MINING SETUP
-# ------------------------------------------------------------
-# 1. Create tiny demo dataset
-domain = Domain([StringVariable("text")], class_vars=StringVariable("class"))
-training_data = Table.from_list(domain, [
-    ["Breaking! Miracle cure found!", "FAKE"],
-    ["Government releases new policy", "REAL"],
-    ["Viral rumor about celebrity", "FAKE"],
-    ["Stock market shows steady growth", "REAL"]
-])
+st.title("📰 Fake News Detection App")
+st.write("Choose input type and analyze whether the content seems Real or Fake.")
 
-# 2. Preprocess text
-training_data.X = preprocess_strings(training_data.X)
+# -----------------------------
+# SIMPLE RULE-BASED CLASSIFIER
+# -----------------------------
+def classify_news(text):
+    text = text.lower()
 
-# 3. Train Naive Bayes model
-nb_model = NaiveBayesLearner()(training_data)
+    fake_keywords = [
+        "shocking", "secret", "breaking!!!", "miracle",
+        "unbelievable", "banned", "hidden truth", "exposed",
+        "100% guarantee", "cure", "conspiracy"
+    ]
 
-# 4. Prediction function for user input
-def orange_predict(user_text):
-    processed = preprocess_strings([user_text])
-    test_table = Table(domain, processed)
-    pred = nb_model(test_table)
-    return str(pred[0])
+    score = sum(word in text for word in fake_keywords)
 
-# ------------------------------------------------------------
-# PAGE CONFIG
-# ------------------------------------------------------------
-st.set_page_config(
-    page_title="Fake News Detector",
-    page_icon="📰",
-    layout="centered"
-)
-
-# LOGO + TITLE
-st.image("logo.png", width=120)  # Make sure logo.png is in the same folder
-st.title("📰 Fake News Detector")
-st.write("Analyze any headline or full article to detect if it's fake or real.")
-
-# ------------------------------------------------------------
-# Reasoning
-# ------------------------------------------------------------
-def generate_reasoning(prediction):
-    if prediction == "FAKE":
-        return (
-            "This content shows several characteristics commonly seen in fake news:\n"
-            "- The language appears overly dramatic or sensational.\n"
-            "- Claims lack credible or verifiable sources.\n"
-            "- Exaggerated or absolute terms are used.\n"
-            "- The information lacks context or seems manipulated.\n"
-            "These indicators collectively point toward misinformation."
-        )
+    if score >= 2:
+        return "Fake"
+    elif score == 1:
+        return "Possibly Fake"
     else:
-        return (
-            "The content appears more balanced and credible:\n"
-            "- Language is factual and not overly emotional.\n"
-            "- Claims appear more grounded with possible context.\n"
-            "- The style avoids unrealistic or exaggerated claims.\n"
-            "Overall, it gives the impression of being authentic."
-        )
+        return "Real"
 
-# ------------------------------------------------------------
-# Advice
-# ------------------------------------------------------------
-def generate_advice(prediction):
-    if prediction == "FAKE":
-        return (
-            "Do not share this content immediately. Verify it through reliable "
-            "fact-checkers like BBC Reality Check, AFP Fact Check, Alt News, or BOOMLive."
-        )
-    else:
-        return (
-            "Even though it looks real, always verify the source before forwarding it."
-        )
 
-# ------------------------------------------------------------
-# External Sources
-# ------------------------------------------------------------
-def generate_links(query):
-    encoded = urllib.parse.quote(query)
-    return {
-        "Google News Search": f"https://news.google.com/search?q={encoded}",
-        "BBC Search": f"https://www.bbc.co.uk/search?q={encoded}",
-        "Alt News Fact Check": f"https://www.altnews.in/?s={encoded}",
-        "BOOMLive Fact Check": f"https://www.boomlive.in/search?query={encoded}"
-    }
+# -----------------------------
+# STREAMLIT INPUT AREA
+# -----------------------------
+st.header("📝 Select Input Type")
+choice = st.radio("Select what you want to enter:", ["Headline Only", "Full Article"])
 
-# ------------------------------------------------------------
-# USER INPUT
-# ------------------------------------------------------------
-st.subheader("Choose Input Type")
+headline = ""
+article = ""
 
-choice = st.radio(
-    "Select what you want to analyze:",
-    ["News Headline", "Full Article"]
-)
-
-if choice == "News Headline":
-    user_input = st.text_input("Enter your headline below:")
+if choice == "Headline Only":
+    headline = st.text_input("Enter News Headline")
 else:
-    user_input = st.text_area("Enter your full article below:", height=180)
+    headline = st.text_input("Headline (optional)")
+    article = st.text_area("Enter Full Article Text", height=180)
 
-# ------------------------------------------------------------
-# PREDICTION BUTTON
-# ------------------------------------------------------------
-if st.button("🔍 Analyze"):
-    if not user_input.strip():
-        st.warning("⚠️ Please enter some text first.")
+if st.button("Analyze"):
+    combined_text = (headline + " " + article).strip()
+
+    if not combined_text:
+        st.warning("⚠ Please enter some text first.")
     else:
+        prediction = classify_news(combined_text)
 
-        # ✅ PREDICTION USING ORANGE
-        prediction = orange_predict(user_input)
+        # -----------------------------
+        # DYNAMIC REASONING & ADVICE
+        # -----------------------------
+        if prediction == "Fake":
+            reasoning = "The text contains several sensational or misleading keywords, which indicate a high likelihood of misinformation."
+            advice = """
+            ❌ **Advice if Fake:**  
+            - Immediately verify using trusted fact-checking sites  
+            - Do NOT share this information unless verified  
+            - Look for official government or credible news sources  
+            """
 
-        # Show Prediction
-        st.subheader("🧪 Prediction Result")
-        if prediction == "FAKE":
-            st.error("❌ This news appears to be FAKE.")
+            sources = """
+            - [Alt News](https://www.altnews.in/)  
+            - [BOOM Fact Check](https://www.boomlive.in/)  
+            - [Factly](https://factly.in/)  
+            """
+
+        elif prediction == "Possibly Fake":
+            reasoning = "At least one suspicious keyword is detected. It may or may not be accurate, but requires verification."
+            advice = """
+            ⚠ **Advice if Possibly Fake:**  
+            - Cross-check with multiple reliable news outlets  
+            - Check publication time and author credibility  
+            - Search if reputed media outlets covered the same story  
+            """
+
+            sources = """
+            - [Google Fact Check Explorer](https://toolbox.google.com/factcheck/explorer)  
+            - [Snopes](https://www.snopes.com/)  
+            """
+
         else:
-            st.success("✔ This news appears to be REAL.")
+            reasoning = "There are no common signals of misinformation or exaggerated keywords detected."
+            advice = """
+            ✔ **Advice if Real:**  
+            - Still check original source for any updates  
+            - Share responsibly from official/reputed outlets  
+            - Verify facts from authentic government or national agencies  
+            """
 
-        # Reasoning
-        st.subheader("🧠 Detailed Reasoning")
-        st.write(generate_reasoning(prediction))
+            sources = """
+            - [Reuters Official News](https://www.reuters.com/)  
+            - [BBC News](https://www.bbc.com/)  
+            - [The Hindu](https://www.thehindu.com/)  
+            """
 
-        # Advice
-        st.subheader("💡 Advice")
-        st.info(generate_advice(prediction))
+        # -----------------------------
+        # DISPLAY RESULTS
+        # -----------------------------
+        st.subheader("🔍 Prediction")
 
-        # External Links
-        st.subheader("🌍 External Sources")
-        links = generate_links(user_input)
-        for name, url in links.items():
-            st.write(f"- [{name}]({url})")
+        if prediction == "Fake":
+            st.error("❌ FAKE NEWS")
+        elif prediction == "Possibly Fake":
+            st.warning("⚠️ POSSIBLY FAKE")
+        else:
+            st.success("✔ REAL NEWS")
 
-        # Thank you message
-        st.success("🙏 THANK YOU FOR USING THIS APP! Stay aware, stay smart, stay safe ❤️")
+        st.subheader("🧠 Reasoning")
+        st.write(reasoning)
+
+        st.subheader("💡 Smart Advice")
+        st.write(advice)
+
+        st.subheader("🔗 Trusted Verification Sources")
+        st.markdown(sources)
+
+        st.info("This rule-based model is for demonstration. Connect ML model for real accuracy.")
+
